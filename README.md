@@ -1,2 +1,126 @@
-# spiralflow-data-chat
-An example of using spiralflow and langchain to build a custom chatflow for your data
+Spiralflow Data Chat
+====================
+
+Spiralflow Data Chat is a chatbot designed to ingest, index, and interact with data using langchain tools and the Spiralflow framework. It can utilize multiple data sources, such as memory, Google Search results, and general knowledge, to generate relevant context and provide accurate responses to user prompts. The chatbot takes into account the relevancy of each data source to ensure accurate and context-aware responses.
+
+Features
+--------
+
+*   Ingest and index data using langchain tools and the Spiralflow framework.
+*   Utilize multiple data sources for context generation, including memory, Google Search results, and general knowledge.
+*   Determine the relevancy of each data source for responding to user prompts.
+*   Generate accurate and context-aware responses based on the provided context and data sources.
+
+Prerequisites
+-------------
+
+Before using Spiralflow Data Chat, make sure to have the following prerequisites:
+
+*   Python 3.9 or later
+*   An OpenAI API key with access to GPT-3.5-turbo (or another suitable language model)
+*   A Google API key and Custom Search JSON API (CSE) ID for utilizing the Google Search Tool
+
+Installation
+------------
+
+1.  Clone the repository:
+
+bash
+
+```bash
+git clone https://github.com/Tiger767/spiralflow-data-chat.git
+cd spiralflow-data-chat
+```
+
+2. Install the required Python packages:
+
+bash
+
+```bash
+pip install -r requirements.txt
+conda install -c conda-forge pytorch faiss-cpu -y
+```
+
+3.  Set up the required environment variables:
+
+bash
+
+```bash
+export OPENAI_API_KEY="your_openai_api_key"
+export GOOGLE_API_KEY="your_google_api_key"
+export GOOGLE_CSE_ID="your_google_cse_id"
+```
+
+Usage
+-----
+
+To run the Spiralflow Data Chat chatbot, simply execute the main script:
+
+bash
+
+```bash
+python main.py
+```
+
+You can also use command-line arguments to customize the chatbot's behavior, such as:
+
+*   `--only_use_memory`: Use only memory for context generation.
+*   `--max_num_databases`: Set the maximum number of databases to consider.
+*   `--max_num_docs`: Set the maximum number of documents to include in the context.
+*   `--max_num_memory_queries`: Set the maximum number of memory queries.
+*   `--combine_threshold`: Set the threshold for combining memory queries.
+*   `--memory_file`: Specify the memory file to use.
+*   `--verbose`: Increase output verbosity.
+*   `--openai_chat_model`: Specify the OpenAI chat model to use (default: "gpt-3.5-turbo").
+*   `--temperature`: Set the temperature for response generation.
+
+For example:
+
+bash
+
+```bash
+python main.py --only_use_memory --max_num_databases 3 --max_num_docs 5 --max_num_memory_queries 8 --combine_threshold 0.1 --memory_file memory_default.pkl --verbose --openai_chat_model gpt-3.5-turbo --temperature 0.3
+```
+
+
+Ingesting Data with `ingest.py`
+-------------------------------
+
+The `ingest.py` script helps you to ingest data and create memory for the SpiralFlow Data Chat chatbot. You can customize the data ingestion process by specifying the directory containing the data, the chunk size, overlap between chunks, input format, and postfix for the memory.
+
+### Usage
+
+1.  Replace the contents of the `data` folder with your data files.
+2.  Remove the placeholder `memory_default.pkl` file from the repository.
+3.  Run the `ingest.py` script:
+
+bash
+
+```bash
+python ingest.py
+```
+
+You can customize the data ingestion process using command-line arguments:
+
+*   `-d`, `--directory`: Directory containing the data (default: "data/").
+*   `-pf`, `--postfix`: Postfix for the memory (default: "default").
+*   `-c`, `--chunk_size`: Chunk size for text splitting (default: 300).
+*   `-o`, `--chunk_overlap`: Overlap between chunks for text splitting (default: 100).
+*   `-f`, `--input_format`: Input format for the data files (choices: "pdf", "text", "html", "python", "markdown", default: "pdf").
+*   `--dry_run`: Perform a dry run, stopping before embeddings are declared.
+
+For example, to ingest data from a directory named `my_data` with a chunk size of 500, an overlap of 200, and an input format of "text", you can run:
+
+bash
+
+```bash
+python ingest.py -d my_data -c 500 -o 200 -f text
+```
+
+After running the `ingest.py` script, a new memory file will be generated based on your data. Make sure to update the `--memory_file` argument in the `main.py` script to use the new memory file.
+
+
+License
+-------
+
+Spiralflow Data Chat is released under the [MIT License](LICENSE).
