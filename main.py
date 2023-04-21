@@ -75,6 +75,10 @@ def main(args):
             for message in history.messages:
                 print(f"{message.role.title()}: {message.content}")
 
+        print("\nTop Possible Sources:")
+        for ndx, source in enumerate(variables["sources"]):
+            print(f"{ndx + 1}. {source[0]}")
+
         print("\nResponse:", variables["response"])
 
 
@@ -157,7 +161,14 @@ def create_prepare_context_flow(only_use_memory, max_num_databases, max_num_docs
 
         memories = variables["memory"]
         for memory in memories:
-            all_docs.append(("Memory", memory["text"], memory["score"]))
+            all_docs.append(
+                (
+                    "Memory",
+                    memory["text"],
+                    memory["metadata"].replace("source: ", ""),
+                    memory["score"],
+                )
+            )
 
         relevancy = variables.get("relevancy")
         if relevancy is not None and not only_use_memory:
@@ -187,34 +198,50 @@ def create_prepare_context_flow(only_use_memory, max_num_databases, max_num_docs
                 and ratings["top google search result"] > 1
             ):
                 search_result = google_search.use({"query": query})
+                # Scores could be actually calcualted if embedded the results and compared
                 all_docs.append(
-                    ("top google search result".upper(), search_result, 0.5)
+                    ("top google search result".upper(), search_result, "Google", 0.45)
                 )
 
             if "general knowledge" in ratings and ratings["general knowledge"] > 1:
-                all_docs.append(("general knowledge".upper(), document, 0.6))
+                all_docs.append(
+                    (
+                        "general knowledge".upper(),
+                        document,
+                        "GPT General Knowledge",
+                        0.46,
+                    )
+                )
 
             # add code here for other databases
 
-        all_docs = sorted(all_docs, key=lambda x: x[2], reverse=True)[:max_num_docs]
+        all_docs = sorted(all_docs, key=lambda x: x[3], reverse=False)[:max_num_docs]
 
         current_name = None
         text = ""
-        for name, doc, _ in all_docs:
+        sources = {}
+        for name, doc, source, score in all_docs:
             if name == current_name:
                 text += doc + "\n"
             else:
                 current_name = name
                 text += f"\n{name}:\n{doc}\n"
 
-        return {"context": text}, ([], [])
+            if source in sources:
+                sources[source] = min(sources[source], score)
+            else:
+                sources[source] = score
+
+        sources = sorted(sources.items(), key=lambda x: x[1], reverse=False)
+
+        return {"context": text, "sources": sources}, ([], [])
 
     return FuncChatFlow(
         prepare_context_func,
         input_varnames=set(["memory"])
         if only_use_memory
         else set(["memory", "relevancy", "document", "database_names", "query"]),
-        output_varnames=set(["context"]),
+        output_varnames=set(["context", "sources"]),
     )
 
 
