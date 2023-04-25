@@ -71,6 +71,7 @@ You can also use command-line arguments to customize the chatbot's behavior, suc
 *   `--combine_threshold`: Set the threshold for combining memory queries.
 *   `--memory_file`: Specify the memory file to use.
 *   `--verbose`: Increase output verbosity.
+*   `--history`: Enables queryable chat history so prompts can refer to previous prompts and responses.
 *   `--openai_chat_model`: Specify the OpenAI chat model to use (default: "gpt-3.5-turbo").
 *   `--temperature`: Set the temperature for response generation.
 
@@ -79,7 +80,7 @@ For example:
 bash
 
 ```bash
-python main.py --only_use_memory --max_num_databases 3 --max_num_docs 5 --max_num_memory_queries 8 --combine_threshold 0.1 --memory_file memory_default.pkl --verbose --openai_chat_model gpt-3.5-turbo --temperature 0.3
+python main.py --only_use_memory --max_num_docs 5 --max_num_memory_queries 8 --combine_threshold 0.1 --memory_file memory_default.pkl --temperature 0.3 --history
 ```
 
 
@@ -103,6 +104,7 @@ python ingest.py
 You can customize the data ingestion process using command-line arguments:
 
 *   `-d`, `--directory`: Directory containing the data (default: "data/").
+*   `-l`, `--load`: Load a previous memory and append to it.
 *   `-pf`, `--postfix`: Postfix for the memory (default: "default").
 *   `-c`, `--chunk_size`: Chunk size for text splitting (default: 300).
 *   `-o`, `--chunk_overlap`: Overlap between chunks for text splitting (default: 100).

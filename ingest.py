@@ -35,7 +35,13 @@ def delete_files_without_extension(folder_path, extension=None):
 
 
 def ingest_data(
-    directory, chunk_size, chunk_overlap, input_format, vector_postfix, dry_run=False
+    directory,
+    chunk_size,
+    chunk_overlap,
+    input_format,
+    vector_postfix,
+    load=None,
+    dry_run=False,
 ):
     # delete extra files
     # delete_files_without_extension("data/catalog", extension='.pdf')
@@ -84,6 +90,9 @@ def ingest_data(
         return
 
     memory = Memory()
+    if load is not None and len(load) > 0:
+        memory.load(load)
+
     for document in documents:
         memory.add(
             {
@@ -97,38 +106,41 @@ def ingest_data(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ingest data and create memory for spiral"
+        description="Ingest data and create memory for spiral."
     )
     parser.add_argument(
-        "-d", "--directory", help="Directory containing the data", default="data/"
+        "-d", "--directory", help="Directory containing the data.", default="data/"
     )
     parser.add_argument(
-        "-pf", "--postfix", help="Postfix for the memory", default="default"
+        "-l", "--load", help="Load a previous memory and append to it.", default=""
+    )
+    parser.add_argument(
+        "-pf", "--postfix", help="Postfix for the memory.", default="default"
     )
     parser.add_argument(
         "-c",
         "--chunk_size",
-        help="Chunk size for text splitting",
+        help="Chunk size for text splitting.",
         type=int,
         default=300,
     )
     parser.add_argument(
         "-o",
         "--chunk_overlap",
-        help="Overlap between chunks for text splitting",
+        help="Overlap between chunks for text splitting.",
         type=int,
         default=100,
     )
     parser.add_argument(
         "-f",
         "--input_format",
-        help="Input format: pdf, text, or html",
+        help="Input format: pdf, text, or html.",
         choices=["pdf", "text", "html", "python", "markdown"],
         default="pdf",
     )
     parser.add_argument(
         "--dry_run",
-        help="Dry run, stops before embeddings are declared",
+        help="Dry run, stops before embeddings are declared.",
         action="store_true",
     )
 
@@ -140,6 +152,7 @@ def main():
         args.chunk_overlap,
         args.input_format,
         args.postfix,
+        load=args.load,
         dry_run=args.dry_run,
     )
 

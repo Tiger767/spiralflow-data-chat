@@ -13,16 +13,18 @@ from spiralflow.flow import (
 )
 from spiralflow.tools import GoogleSearchTool
 from spiralflow.memory import Memory
+from spiralflow.chat_history import ChatHistory
 
 
 def main(args):
     # Define the individual flows
     contextualize_flow = create_contextualize_flow()
+    memory = Memory(args.memory_file)
     memory_flow = create_memory_flow(
         contextualize_flow,
         args.max_num_memory_queries,
         args.combine_threshold,
-        args.memory_file,
+        memory,
     )
     document_generation_flow = create_document_generation_flow()
     relevancy_flow = create_relevancy_flow()
@@ -32,13 +34,17 @@ def main(args):
     answer_flow = create_answer_flow()
 
     # Combine the flows into the main flow
+    # Only memory_flow gets past histories, which only come from the full history of each answer_flow
+    # This means answer_flow itself does not get such histories.
     main_flow = SequentialChatFlows(
         [
-            NoHistory(memory_flow)
+            NoHistory(memory_flow, allow_input_history=True)
             if args.only_use_memory
             else NoHistory(
                 ConcurrentChatFlows(
-                    [memory_flow, document_generation_flow], max_workers=2
+                    [memory_flow, document_generation_flow],
+                    max_workers=2,
+                    allow_input_history=True,
                 )
             ),
             NoHistory(prepare_context_flow)
@@ -52,8 +58,7 @@ def main(args):
     chat_llm = ChatLLM(gpt_model=args.openai_chat_model, temperature=args.temperature)
 
     # Main loop for receiving prompts and generating responses
-    # Chat History for each question is not shared in this loop. Each prompt must be standalone.
-    # However, everything exists above to easily change the below loop to make prompts dependent on previous prompts.
+    chat_history = ChatHistory() if args.history else None
     while True:
         prompt = input("\nPrompt: ")
 
@@ -65,15 +70,29 @@ def main(args):
             "General Knowledge - Well-known facts and information that is generally known to the public.",
         }
 
-        variables, history = main_flow(input_variables, chat_llm=chat_llm)
+        variables, history = main_flow(
+            input_variables, chat_llm=chat_llm, input_chat_history=chat_history
+        )
+
+        if chat_history is not None:
+            # Update history and add prompt response pair to memory for future possible queries
+            chat_history = history
+            # assuming query + response less than 500 tokens
+            memory.add(
+                {
+                    "text": f"Prompt: {variables['query']}\nResponse: {variables['response']}",
+                    "metadata": f"source: Past Prompt/Response",
+                }
+            )
 
         if args.verbose:
-            print("\n\nExtracted Variables:")
-            for key, value in variables.items():
-                print(f"{key}: {value}\n")
-            print("\n\nChat History:")
-            for message in history.messages:
-                print(f"{message.role.title()}: {message.content}")
+            pass
+            # print("\n\nExtracted Variables:")
+            # for key, value in variables.items():
+            #    print(f"{key}: {value}\n")
+            # print("\n\nChat History:")
+            # for message in history.messages:
+            #    print(f"{message.role.title()}: {message.content}")
 
         print("\nTop Possible Sources:")
         for ndx, source in enumerate(variables["sources"]):
@@ -102,15 +121,16 @@ def create_contextualize_flow():
 
 
 def create_memory_flow(
-    contextualize_flow, max_num_memory_queries, combine_threshold, memory_file
+    contextualize_flow, max_num_memory_queries, combine_threshold, memory
 ):
     return MemoryChatFlow(
         contextualize_flow,
-        Memory(memory_file),
+        memory,
         memory_query_kwargs={
             "k": max_num_memory_queries,
             "combine_threshold": combine_threshold,
         },
+        verbose=True,
     )
 
 
@@ -163,7 +183,7 @@ def create_prepare_context_flow(only_use_memory, max_num_databases, max_num_docs
         for memory in memories:
             all_docs.append(
                 (
-                    "Memory",
+                    "Memory".upper(),
                     memory["text"],
                     memory["metadata"].replace("source: ", ""),
                     memory["score"],
@@ -234,7 +254,7 @@ def create_prepare_context_flow(only_use_memory, max_num_databases, max_num_docs
 
         sources = sorted(sources.items(), key=lambda x: x[1], reverse=False)
 
-        return {"context": text, "sources": sources}, ([], [])
+        return {"context": text, "sources": sources}, ([input_chat_history], [])
 
     return FuncChatFlow(
         prepare_context_func,
@@ -249,7 +269,7 @@ def create_answer_flow():
     return ChatFlow.from_dicts(
         [
             {Role.SYSTEM: "{identity}"},
-            {Role.USER: "Give me context to the prompt below:\n{prompt}"},
+            {Role.USER: "Give me context to the prompt below:\n{query}"},
             {
                 Role.ASSISTANT: "Here is some context related to the prompt:\n{context}",
                 "type": "input",
@@ -297,6 +317,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--verbose", action="store_true", help="Increase output verbosity."
+    )
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help="Enables queryable chat history so prompts can refer to previous prompts and responses.",
     )
     parser.add_argument(
         "--openai_chat_model",
