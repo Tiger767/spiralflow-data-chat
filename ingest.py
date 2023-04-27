@@ -4,8 +4,8 @@ from pathlib import Path
 
 from langchain.text_splitter import (
     RecursiveCharacterTextSplitter,
-    MarkdownTextSplitter,
     PythonCodeTextSplitter,
+    TokenTextSplitter,
 )
 from langchain.document_loaders import (
     PyMuPDFLoader,
@@ -38,7 +38,6 @@ def ingest_data(
     directory,
     chunk_size,
     chunk_overlap,
-    input_format,
     vector_postfix,
     load=None,
     dry_run=False,
@@ -46,62 +45,89 @@ def ingest_data(
     # delete extra files
     # delete_files_without_extension("data/catalog", extension='.pdf')
 
-    if input_format == "pdf":
-        loader = DirectoryLoader(directory, loader_cls=PyMuPDFLoader)
-    elif input_format in ["text", "python", "markdown"]:
-        loader = DirectoryLoader(
-            directory, loader_cls=lambda path: TextLoader(path, encoding="utf-8")
-        )
-    elif input_format == "html":
-        loader = DirectoryLoader(directory, loader_cls=BSHTMLLoader)
-    else:
-        raise ValueError("Invalid input format")
-
-    raw_documents = loader.load()
-    # print(raw_documents[:3])
-    print(len(raw_documents))
-    if input_format != "python":
-        text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            encoding_name="cl100k_base",
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
-        documents = text_splitter.split_documents(raw_documents)
-    elif input_format == "markdown":
-        md_splitter = MarkdownTextSplitter.from_tiktoken_encoder(
-            encoding_name="cl100k_base",
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
-        documents = md_splitter.split_documents(raw_documents)
-    else:
-        code_splitter = PythonCodeTextSplitter.from_tiktoken_encoder(
-            encoding_name="cl100k_base",
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
-        documents = code_splitter.split_documents(raw_documents)
-    for document in documents[:10]:
-        print(document.page_content, "\n", document.metadata, end="\n\n")
-    print(len(documents), len(documents) * chunk_size)
-
-    if dry_run:
-        print("Dry run completed. Stopping before embeddings are computed.")
-        return
-
     memory = Memory()
     if load is not None and len(load) > 0:
         memory.load(load)
 
-    for document in documents:
-        memory.add(
-            {
-                "text": document.page_content,
-                "metadata": "source: " + document.metadata["source"],
-            }
-        )
+    loaders = {
+        "pdf": DirectoryLoader(
+            directory, loader_cls=PyMuPDFLoader, glob="*.pdf", recursive=True
+        ),
+        "text": DirectoryLoader(
+            directory,
+            loader_cls=lambda path: TextLoader(path, encoding="utf-8"),
+            glob="*.txt",
+            recursive=True,
+        ),
+        "html": DirectoryLoader(
+            directory, loader_cls=BSHTMLLoader, glob="*.html", recursive=True
+        ),
+        "python": DirectoryLoader(
+            directory,
+            loader_cls=lambda path: TextLoader(path, encoding="utf-8"),
+            glob="*.py",
+            recursive=True,
+        ),
+        "markdown": DirectoryLoader(
+            directory,
+            loader_cls=lambda path: TextLoader(path, encoding="utf-8"),
+            glob="*.md",
+            recursive=True,
+        ),
+    }
 
-    memory.save(f"memory_{vector_postfix}")
+    total_documents = 0
+    total_document_chunks = 0
+    for input_format, loader in loaders.items():
+        raw_documents = loader.load()
+        total_documents += len(raw_documents)
+
+        if input_format in ["text", "pdf", "html", "markdown"]:
+            splitter = TokenTextSplitter(
+                encoding_name="cl100k_base",
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
+
+            # Does not follow chunking size well
+            #splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+            #    encoding_name="cl100k_base",
+            #    chunk_size=chunk_size,
+            #    chunk_overlap=chunk_overlap,
+            #)
+        elif input_format == "python":
+            splitter = PythonCodeTextSplitter.from_tiktoken_encoder(
+                encoding_name="cl100k_base",
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
+        else:
+            raise ValueError(f"Unknown input format: {input_format}")
+
+        documents = splitter.split_documents(raw_documents)
+        total_document_chunks += len(documents)
+
+        for document in documents[::5][:3]:
+            print(document.page_content, "\n", document.metadata, end="\n\n")
+
+        for document in documents:
+            source = document.metadata["source"]
+            if "page_number" in document.metadata:
+                source += f"-pg-{document.metadata['page_number']}"
+            if not dry_run:
+                memory.add(
+                    {
+                        "text": document.page_content,
+                        "metadata": "source: " + source,
+                    }
+                )
+
+    if dry_run:
+        print(
+            f"Dry run completed. Total Documents: {total_documents} - Total Document Chunks: {total_document_chunks} - Total Tokens Estimated: {total_document_chunks * chunk_size}"
+        )
+    else:
+        memory.save(f"memory_{vector_postfix}")
 
 
 def main():
@@ -122,21 +148,14 @@ def main():
         "--chunk_size",
         help="Chunk size for text splitting.",
         type=int,
-        default=300,
+        default=240,
     )
     parser.add_argument(
         "-o",
         "--chunk_overlap",
         help="Overlap between chunks for text splitting.",
         type=int,
-        default=100,
-    )
-    parser.add_argument(
-        "-f",
-        "--input_format",
-        help="Input format: pdf, text, or html.",
-        choices=["pdf", "text", "html", "python", "markdown"],
-        default="pdf",
+        default=80,
     )
     parser.add_argument(
         "--dry_run",
@@ -150,7 +169,6 @@ def main():
         args.directory,
         args.chunk_size,
         args.chunk_overlap,
-        args.input_format,
         args.postfix,
         load=args.load,
         dry_run=args.dry_run,

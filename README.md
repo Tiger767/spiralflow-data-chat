@@ -108,7 +108,6 @@ You can customize the data ingestion process using command-line arguments:
 *   `-pf`, `--postfix`: Postfix for the memory (default: "default").
 *   `-c`, `--chunk_size`: Chunk size for text splitting (default: 300).
 *   `-o`, `--chunk_overlap`: Overlap between chunks for text splitting (default: 100).
-*   `-f`, `--input_format`: Input format for the data files (choices: "pdf", "text", "html", "python", "markdown", default: "pdf").
 *   `--dry_run`: Perform a dry run, stopping before embeddings are declared.
 
 For example, to ingest data from a directory named `my_data` with a chunk size of 500, an overlap of 200, and an input format of "text", you can run:
@@ -116,7 +115,7 @@ For example, to ingest data from a directory named `my_data` with a chunk size o
 bash
 
 ```bash
-python ingest.py -d my_data -c 500 -o 200 -f text
+python ingest.py -d my_data -c 500 -o 200
 ```
 
 After running the `ingest.py` script, a new memory file will be generated based on your data. Make sure to update the `--memory_file` argument in the `main.py` script to use the new memory file.
