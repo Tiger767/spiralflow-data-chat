@@ -65,22 +65,27 @@ python main.py
 You can also use command-line arguments to customize the chatbot's behavior, such as:
 
 *   `--only_use_memory`: Use only memory for context generation.
-*   `--max_num_databases`: Set the maximum number of databases to consider.
-*   `--max_num_docs`: Set the maximum number of documents to include in the context.
-*   `--max_num_memory_queries`: Set the maximum number of memory queries.
-*   `--combine_threshold`: Set the threshold for combining memory queries.
-*   `--memory_file`: Specify the memory file to use.
+*   `--max_num_databases`: Maximum number of databases to consider.
+*   `--max_num_docs`: Maximum number of documents to include in the context.
+*   `--max_num_memory_queries`: Maximum number of memory queries.
+*   `--max_num_context_tokens`: Maximum number of tokens for the full context.
+*   `--memory_score_threshold`: Threshold for memory queries. A value of .5 is strict and .7 is loose.
+*   `--combine_threshold`: Threshold for combining memory queries.
+*   `--memory_file`: Memory file to use.
 *   `--verbose`: Increase output verbosity.
 *   `--history`: Enables queryable chat history so prompts can refer to previous prompts and responses.
-*   `--openai_chat_model`: Specify the OpenAI chat model to use (default: "gpt-3.5-turbo").
-*   `--temperature`: Set the temperature for response generation.
+*   `--max_chat_history_tokens`: Number of tokens chat history can have. Any more will be truncated.
+*   `--openai_chat_model`: OpenAI chat model to use (default: "gpt-3.5-turbo").
+*   `--max_num_prompt_tokens`: Number of tokens a prompt can contain without having to break it up.
+*   `--max_num_tokens_per_memory`: Number of tokens a memory can contain without having to break it up.
+*   `--temperature`: Temperature for response generation.
 
 For example:
 
 bash
 
 ```bash
-python main.py --only_use_memory --max_num_docs 5 --max_num_memory_queries 8 --combine_threshold 0.1 --memory_file memory_default.pkl --temperature 0.3 --history
+python main.py --only_use_memory --memory_file memory_default.pkl --temperature 0.3 --history
 ```
 
 
@@ -106,8 +111,8 @@ You can customize the data ingestion process using command-line arguments:
 *   `-d`, `--directory`: Directory containing the data (default: "data/").
 *   `-l`, `--load`: Load a previous memory and append to it.
 *   `-pf`, `--postfix`: Postfix for the memory (default: "default").
-*   `-c`, `--chunk_size`: Chunk size for text splitting (default: 300).
-*   `-o`, `--chunk_overlap`: Overlap between chunks for text splitting (default: 100).
+*   `-c`, `--chunk_size`: Chunk size for text splitting (default: 240).
+*   `-o`, `--chunk_overlap`: Overlap between chunks for text splitting (default: 80).
 *   `--dry_run`: Perform a dry run, stopping before embeddings are declared.
 
 For example, to ingest data from a directory named `my_data` with a chunk size of 500, an overlap of 200, and an input format of "text", you can run:

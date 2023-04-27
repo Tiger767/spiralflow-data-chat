@@ -90,11 +90,11 @@ def ingest_data(
             )
 
             # Does not follow chunking size well
-            #splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+            # splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
             #    encoding_name="cl100k_base",
             #    chunk_size=chunk_size,
             #    chunk_overlap=chunk_overlap,
-            #)
+            # )
         elif input_format == "python":
             splitter = PythonCodeTextSplitter.from_tiktoken_encoder(
                 encoding_name="cl100k_base",
