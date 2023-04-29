@@ -394,8 +394,7 @@ def create_respond_flow(
                 ConcurrentChatFlows(
                     [memory_flow, document_generation_flow],
                     max_workers=2,
-                    allow_input_history=True,
-                )
+                ), allow_input_history=True
             ),
             NoHistory(prepare_context_flow)
             if only_use_memory
