@@ -75,7 +75,7 @@ def process_single_prompt(
     )
     if prompt is None:
         return
-    os.system("clear")
+    # os.system("clear")
 
     response, history = generate_response(
         respond_flow, chat_llm, chat_history, args.persona, prompt
@@ -394,7 +394,8 @@ def create_respond_flow(
                 ConcurrentChatFlows(
                     [memory_flow, document_generation_flow],
                     max_workers=2,
-                ), allow_input_history=True
+                ),
+                allow_input_history=True,
             ),
             NoHistory(prepare_context_flow)
             if only_use_memory
@@ -528,7 +529,7 @@ def create_prepare_context_flow(
         memories = variables["memory"]
         query = variables["query"]
         for memory in memories:
-            if memory["score"] < memory_score_threshold:
+            if memory["score"] > memory_score_threshold:
                 all_docs.append(
                     (
                         "Memory".upper(),
@@ -568,7 +569,7 @@ def create_prepare_context_flow(
                 search_result = google_search.use({"query": query})
                 # Scores could be actually calcualted if embedded the results and compared
                 all_docs.append(
-                    ("top google search result".upper(), search_result, "Google", 0.45)
+                    ("top google search result".upper(), search_result, "Google", 0.7)
                 )
 
             if "general knowledge" in ratings and ratings["general knowledge"] > 1:
@@ -577,13 +578,13 @@ def create_prepare_context_flow(
                         "general knowledge".upper(),
                         document,
                         "GPT General Knowledge",
-                        0.46,
+                        0.65,
                     )
                 )
 
             # add code here for other databases
 
-        all_docs = sorted(all_docs, key=lambda x: x[3], reverse=False)[:max_num_docs]
+        all_docs = sorted(all_docs, key=lambda x: x[3], reverse=True)[:max_num_docs]
 
         current_name = None
         text = ""
@@ -600,7 +601,7 @@ def create_prepare_context_flow(
             text += text_seg
             sources[source] = min(sources.get(source, score), score)
 
-        sources = sorted(sources.items(), key=lambda x: x[1], reverse=False)
+        sources = sorted(sources.items(), key=lambda x: x[1], reverse=True)
 
         return {"context": text, "sources": sources}, ([input_chat_history], [])
 
@@ -676,8 +677,8 @@ def get_args():
     parser.add_argument(
         "--memory_score_threshold",
         type=float,
-        default=0.6,
-        help="Threshold for memory queries. A value of .5 is strict and .7 is loose.",
+        default=0.65,
+        help="Threshold for memory queries. A value of .8 is strict and .5 is loose.",
     )
     parser.add_argument(
         "--combine_threshold",
