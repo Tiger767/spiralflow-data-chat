@@ -1,12 +1,11 @@
 Spiralflow Data Chat
 ====================
 
-Spiralflow Data Chat is a chatbot designed to ingest, index, and interact with data using langchain tools and the Spiralflow framework. It can utilize multiple data sources, such as memory, Google Search results, and general knowledge, to generate relevant context and provide accurate responses to user prompts. The chatbot takes into account the relevancy of each data source to ensure accurate and context-aware responses.
+Spiralflow Data Chat is a chatbot designed to ingest, index, and interact with data using the Spiralflow framework. It can utilize multiple data sources, such as memory, Google Search results, and general knowledge, to generate relevant context and provide accurate responses to user prompts. The chatbot takes into account the relevancy of each data source to ensure accurate and context-aware responses.
 
 Features
 --------
 
-*   Ingest and index data using langchain tools and the Spiralflow framework.
 *   Utilize multiple data sources for context generation, including memory, Google Search results, and general knowledge.
 *   Determine the relevancy of each data source for responding to user prompts.
 *   Generate accurate and context-aware responses based on the provided context and data sources.
