@@ -1,12 +1,12 @@
 Spiralflow Data Chat
 ====================
 
-Spiralflow Data Chat is a chatbot designed to ingest, index, and interact with data using langchain tools and the Spiralflow framework. It can utilize multiple data sources, such as memory, Google Search results, and general knowledge, to generate relevant context and provide accurate responses to user prompts. The chatbot takes into account the relevancy of each data source to ensure accurate and context-aware responses.
+Spiralflow Data Chat is a chatbot designed to ingest, index, and interact with data using the Spiralflow framework. It can utilize multiple data sources, such as memory, Google Search results, and general knowledge, to generate relevant context and provide accurate responses to user prompts. The chatbot takes into account the relevancy of each data source to ensure accurate and context-aware responses.
 
 Features
 --------
 
-*   Ingest and index data using langchain tools and the Spiralflow framework.
+*   Ingest and index data (PDF, HTML, and any text file).
 *   Utilize multiple data sources for context generation, including memory, Google Search results, and general knowledge.
 *   Determine the relevancy of each data source for responding to user prompts.
 *   Generate accurate and context-aware responses based on the provided context and data sources.
@@ -37,7 +37,7 @@ cd spiralflow-data-chat
 bash
 
 ```bash
-pip install -r requirements.txt
+pip install spiralflow
 conda install -c conda-forge pytorch faiss-cpu -y
 ```
 
@@ -59,33 +59,35 @@ To run the Spiralflow Data Chat chatbot, simply execute the main script:
 bash
 
 ```bash
-python main.py
+python data_chat.py
 ```
 
 You can also use command-line arguments to customize the chatbot's behavior, such as:
 
 *   `--only_use_memory`: Use only memory for context generation.
-*   `--max_num_databases`: Maximum number of databases to consider.
-*   `--max_num_docs`: Maximum number of documents to include in the context.
-*   `--max_num_memory_queries`: Maximum number of memory queries.
-*   `--max_num_context_tokens`: Maximum number of tokens for the full context.
-*   `--memory_score_threshold`: Threshold for memory queries. A value of .5 is strict and .7 is loose.
-*   `--combine_threshold`: Threshold for combining memory queries.
-*   `--memory_file`: Memory file to use.
+*   `--max_num_databases`: Maximum number of databases to consider (default: 3).
+*   `--max_num_docs`: Maximum number of documents to include in the context (default: 8).
+*   `--max_num_memory_queries`: Maximum number of memory queries (default: 10).
+*   `--max_num_context_tokens`: Maximum number of tokens for the full context (default: 1500).
+*   `--memory_score_threshold`: Threshold for memory queries, where .8 is strict and .7 is loose (default: 0.7).
+*   `--combine_threshold`: Threshold for combining memory queries (default: 0.1).
+*   `--summarize_context`: Summarize each document in context, attempting to extract relevant parts.
+*   `--memory_file`: Memory file to use (default: "data/memory\_default.pkl").
 *   `--verbose`: Increase output verbosity.
-*   `--history`: Enables queryable chat history so prompts can refer to previous prompts and responses.
-*   `--max_chat_history_tokens`: Number of tokens chat history can have. Any more will be truncated.
+*   `--history`: Enable queryable chat history so prompts can refer to previous prompts and responses.
+*   `--max_chat_history_tokens`: Number of tokens chat history can have, with excess being truncated (default: 2000).
 *   `--openai_chat_model`: OpenAI chat model to use (default: "gpt-3.5-turbo").
-*   `--max_num_prompt_tokens`: Number of tokens a prompt can contain without having to break it up.
-*   `--max_num_tokens_per_memory`: Number of tokens a memory can contain without having to break it up.
-*   `--temperature`: Temperature for response generation.
+*   `--max_num_prompt_tokens`: Number of tokens a prompt can contain without having to break it up (default: 2000).
+*   `--max_num_tokens_per_memory`: Number of tokens a prompt can contain without having to break it up (default: 500).
+*   `--temperature`: Temperature for response generation (default: 0.3).
+*   `--persona`: Persona to use for response generation, which may not be stressed as it is only one aspect of the response (default: "").
 
 For example:
 
 bash
 
 ```bash
-python main.py --only_use_memory --memory_file memory_default.pkl --temperature 0.3 --history
+python data_chat.py --only_use_memory --memory_file memory_default.pkl --temperature 0.1 --history
 ```
 
 
@@ -112,7 +114,7 @@ You can customize the data ingestion process using command-line arguments:
 *   `-l`, `--load`: Load a previous memory and append to it.
 *   `-pf`, `--postfix`: Postfix for the memory (default: "default").
 *   `-c`, `--chunk_size`: Chunk size for text splitting (default: 240).
-*   `-o`, `--chunk_overlap`: Overlap between chunks for text splitting (default: 80).
+*   `-o`, `--chunk_overlap_factor`: Overlap factor between chunks for text splitting (default: 1/3).
 *   `--dry_run`: Perform a dry run, stopping before embeddings are declared.
 
 For example, to ingest data from a directory named `my_data` with a chunk size of 500, an overlap of 200, and an input format of "text", you can run:
