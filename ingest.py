@@ -79,13 +79,21 @@ def ingest_data(
     total_document_chunks = len(documents)
 
     for document in documents[:4]:
+<<<<<<< HEAD
         print(f"'{document['content']}'", "\n", document["path"], end="\n\n")
+=======
+        print(f"'{document['content']}'", "\n", document["path"], end="\n\n\n")
+>>>>>>> 4841389e72e9a6d5d301121411f5c8e7e6fdcd80
 
     for document in documents:
         source = document["path"]
         if "page_number" in document:
             source += f"-pg-{document['page_number']}"
+<<<<<<< HEAD
         if not dry_run and len(document["content"]) > 0:
+=======
+        if not dry_run:
+>>>>>>> 4841389e72e9a6d5d301121411f5c8e7e6fdcd80
             # print(len(document["content"]), source)
             memory.add(
                 {

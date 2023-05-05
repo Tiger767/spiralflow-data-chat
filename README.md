@@ -6,7 +6,6 @@ Spiralflow Data Chat is a chatbot designed to ingest, index, and interact with d
 Features
 --------
 
-*   Ingest and index data (PDF, HTML, and any text file).
 *   Utilize multiple data sources for context generation, including memory, Google Search results, and general knowledge.
 *   Determine the relevancy of each data source for responding to user prompts.
 *   Generate accurate and context-aware responses based on the provided context and data sources.
