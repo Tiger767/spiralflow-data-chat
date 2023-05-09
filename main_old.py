@@ -1,7 +1,6 @@
 import os
 import argparse
 import concurrent.futures
-import regex as re
 
 import tiktoken
 
@@ -18,6 +17,7 @@ from spiralflow.flow import (
 from spiralflow.tools import GoogleSearchTool
 from spiralflow.memory import Memory
 from spiralflow.chat_history import ChatHistory
+from spiralflow.chunking import SmartChunker
 
 
 def main(args):
@@ -33,9 +33,12 @@ def main(args):
         max_num_docs=args.max_num_docs,
         memory_score_threshold=args.memory_score_threshold,
         max_num_context_tokens=args.max_num_context_tokens,
+        summarize_context=args.summarize_context,
         only_use_memory=args.only_use_memory,
         verbose=args.verbose,
     )
+    ac_flow = create_assumption_clarification_flow(args.verbose)
+    reflection_flow = create_self_reflect_flow(args.verbose)
     chat_llm = ChatLLM(gpt_model=args.openai_chat_model, temperature=args.temperature)
 
     # Initialize chat history
@@ -44,31 +47,152 @@ def main(args):
     # Main loop for receiving prompts and generating responses
     response = ""
     while True:
-        response, chat_history = process_single_prompt(
-            memory,
-            encoder,
-            respond_flow,
+        # Check for concurrent processing of prompts
+        if input("\nSubmit multiple prompts for concurrent processing? (y/n): ") == "y":
+            process_multiple_prompts(
+                memory,
+                encoder,
+                respond_flow,
+                ac_flow,
+                chat_llm,
+                chat_history,
+                args,
+                response,
+            )
+
+        # Check for long text chunking and processing
+        elif (
+            input("\nSubmit a prompt with a long text to chunk and respond? (y/n): ")
+            == "y"
+        ):
+            process_long_text_chunk(
+                memory,
+                encoder,
+                respond_flow,
+                ac_flow,
+                chat_llm,
+                chat_history,
+                args,
+                response,
+            )
+
+        # Process single prompt
+        else:
+            response, chat_history = process_single_prompt(
+                memory,
+                encoder,
+                respond_flow,
+                ac_flow,
+                reflection_flow,
+                chat_llm,
+                chat_history,
+                args,
+                response,
+            )
+
+
+def process_multiple_prompts(
+    memory, encoder, respond_flow, ac_flow, chat_llm, chat_history, args, response
+):
+    """
+    Process multiple prompts, going through the respond_flow.
+    Add the prompts and responses to the memory if using history.
+    """
+    print(
+        "Input exactly `[END]` with nothing else in a prompt to finish entering prompts."
+    )
+    prompts = []
+    total_num_tokens = 0
+    while True:
+        prompt, num_tokens = handle_prompt(
+            ac_flow,
             chat_llm,
             chat_history,
-            args,
+            encoder,
+            args.max_num_prompt_tokens,
             response,
+            clarify=False,
         )
+        if prompt == "[END]":
+            break
+        total_num_tokens += num_tokens
+        prompts.append(prompt)
+    # os.system("clear")
+
+    print(f"Total Prompt Tokens: {total_num_tokens}\nResponding now.")
+
+    responses_list, _ = generate_responses(
+        respond_flow,
+        chat_llm,
+        chat_history,
+        args.persona,
+        prompts,
+        print_prompt=True,
+    )
+
+    if chat_history is not None:
+        for prompt, response in zip(prompts, responses_list):
+            update_memory(memory, encoder, prompt, response)
+
+
+def process_long_text_chunk(
+    memory, encoder, respond_flow, ac_flow, chat_llm, chat_history, args, response
+):
+    """
+    Process a single prompt through a large amount of text, going through the respond_flow.
+    Adds the full prompts and responses to the memory if using history.
+    """
+    prompt, num_tokens = handle_prompt(
+        ac_flow,
+        chat_llm,
+        chat_history,
+        encoder,
+        args.max_num_prompt_tokens * 50,
+        response,
+        clarify=False,
+    )
+    if prompt is None:
+        return
+    long_text = get_input("\nLong Text: ")
+    # os.system("clear")
+
+    prompt = "\n\n----\n\nFOR THE ABOVE DO THE FOLLOWING:\n" + prompt
+    chunked_text = SmartChunker(
+        encoder, args.max_num_prompt_tokens - len(encoder.encode(prompt)), 1 / 4
+    ).chunk(long_text)
+    prompts = [chunked_text + prompt for chunked_text in chunked_text]
+
+    num_tokens = sum([len(encoder.encode(prompt)) for prompt in prompts])
+    print(f"Total Prompt Tokens: {num_tokens}\nResponding now.")
+
+    responses_list, _ = generate_responses(
+        respond_flow, chat_llm, chat_history, args.persona, prompts
+    )
+
+    if chat_history is not None:
+        for prompt, response in zip(prompts, responses_list):
+            update_memory(memory, encoder, prompt, response)
 
 
 def process_single_prompt(
     memory,
     encoder,
     respond_flow,
+    ac_flow,
+    reflection_flow,
     chat_llm,
     chat_history,
     args,
     response,
 ):
     """
-    Process a single prompt, going through the respond_flow.
+    Process a single prompt, going through the respond_flow, then possibly the reflection_flow.
     Add the prompt to the memory and update chat history if using history.
     """
     prompt, num_tokens = handle_prompt(
+        ac_flow,
+        chat_llm,
+        chat_history,
         encoder,
         args.max_num_prompt_tokens,
         response,
@@ -77,11 +201,18 @@ def process_single_prompt(
         return
     # os.system("clear")
 
-    response, history = generate_response(
-        respond_flow, chat_llm, chat_history, args.persona, prompt
+    response, history = generate_responses(
+        respond_flow, chat_llm, chat_history, args.persona, [prompt]
     )
+    response, history = response[0], history[0]
+
+    revised_response = reflect_on_response(reflection_flow, chat_llm, history, prompt)
+    if revised_response is not None:
+        response = revised_response
+        print(response)
 
     if chat_history is not None:
+        # Not adding reflected history even if prefered
         chat_history = update_memory_and_chat_history(
             memory,
             encoder,
@@ -96,9 +227,13 @@ def process_single_prompt(
 
 
 def handle_prompt(
+    ac_flow,
+    chat_llm,
+    chat_history,
     encoder,
     max_num_prompt_tokens,
     last_response,
+    clarify=True,
 ):
     """
     Handles user input of prompts.
@@ -117,41 +252,93 @@ def handle_prompt(
         print("\nPrompt too long.")
         return None, 0
 
+    if clarify and input("Clarify? (y/n): ") == "y":
+        variables, _ = ac_flow(
+            {"prompt": prompt}, chat_llm=chat_llm, input_chat_history=chat_history
+        )
+        print(variables["clarifications"])
+        print(variables["assumptions"])
+
+        new_prompt = input("\nClarified Prompt (press enter to use original): ")
+        if new_prompt:
+            prompt = new_prompt
+
+            prompt = prompt.replace("[LAST_RESPONSE]", last_response)
+
+            num_tokens = len(encoder.encode(prompt))
+            if num_tokens > max_num_prompt_tokens:
+                print("\nPrompt too long.")
+                return None
+
     return prompt, num_tokens
 
 
-def generate_response(
-    respond_flow, chat_llm, chat_history, persona, prompt, print_prompt=False
+def generate_responses(
+    respond_flow, chat_llm, chat_history, persona, prompts, print_prompt=False
 ):
     """
-    Generates response to a prompt, running it through the respond_flow.
+    Generates responses to multiple prompts by concurrently running it through the respond_flow.
     """
-    input_variables = {
-        "prompt": prompt,
-        "identity": "You are an intelligent assistant who thinks thoroughly through all the context to best respond to a prompt. "
-        + persona,
-        "database_names": "Top Google Search Result, General Knowledge",
-        "databases": "Top Google Search Result - The top google search result is the best source for live information and can have any other relevant information.\n"
-        "General Knowledge - Well-known facts and information that is generally known to the public.",
-    }
+    input_variables_list = []
+    for prompt in prompts:
+        input_variables = {
+            "prompt": prompt,
+            "identity": "You are an intelligent assistant who thinks thoroughly through all the context to best respond to a prompt. "
+            + persona,
+            "database_names": "Top Google Search Result, General Knowledge",
+            "databases": "Top Google Search Result - The top google search result is the best source for live information and can have any other relevant information.\n"
+            "General Knowledge - Well-known facts and information that is generally known to the public.",
+        }
+        input_variables_list.append(input_variables)
 
-    variables, history = respond_flow(
-        input_variables, chat_llm=chat_llm, input_chat_history=chat_history
-    )
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        responses_histories = list(
+            executor.map(
+                lambda input_variables: respond_flow(
+                    input_variables, chat_llm=chat_llm, input_chat_history=chat_history
+                ),
+                input_variables_list,
+            )
+        )
 
-    prompt = variables["prompt"]
-    response = variables["response"]
+    response_list, history_list = [], []
+    for variables, history in responses_histories:
+        prompt = variables["prompt"]
+        response = variables["response"]
+        response_list.append(response)
+        history_list.append(history)
 
-    if print_prompt:
-        print("\nPrompt:", prompt)
+        if print_prompt:
+            print("\nPrompt:", prompt)
 
-    print("\nTop Possible Sources:")
-    for ndx, source in enumerate(variables["sources"]):
-        print(f"{ndx + 1}. {source[0]}")
+        print("\nTop Possible Sources:")
+        for ndx, source in enumerate(variables["sources"]):
+            print(f"{ndx + 1}. {source[0]}")
 
-    print("\nResponse:", response)
+        print("\nResponse:", response)
 
-    return response, history
+    return response_list, history_list
+
+
+def reflect_on_response(reflection_flow, chat_llm, history, prompt):
+    """
+    Asks the user if they want to have the chatllm reflect on the prompt.
+    If so, does it, and then asks if they prefer that response over the original.
+    """
+    if input("\nReflect? (y/n): ") == "y":
+        reflection_variables, _ = reflection_flow(
+            {"prompt": prompt}, chat_llm=chat_llm, input_chat_history=history
+        )
+        print(reflection_variables["reflection"])
+        if input("\nPrefer this response? (y/n): ") == "y":
+            revised_response = (
+                reflection_variables["reflection"]
+                .rsplit("Revised Response:", 1)[1]
+                .strip()
+            )
+            return revised_response
+
+    return None
 
 
 def update_memory_and_chat_history(
@@ -229,12 +416,9 @@ def handle_large_memory_entries(
     both are chunked and added separately.
     """
     if num_query_tokens < max_num_tokens_per_memory / 3:
-        for response_part in smart_chunk(
-            response,
-            encoder,
-            max_num_tokens_per_memory - num_query_tokens - cushion,
-            1 / 3,
-        ):
+        for response_part in SmartChunker(
+            encoder, max_num_tokens_per_memory - num_query_tokens - cushion, 1 / 3
+        ).chunk(response):
             memory.add(
                 {
                     "text": f"Prompt: {query}\nResponse: {response_part}",
@@ -242,12 +426,9 @@ def handle_large_memory_entries(
                 }
             )
     elif num_response_tokens < max_num_tokens_per_memory / 3:
-        for query_part in smart_chunk(
-            query,
-            encoder,
-            max_num_tokens_per_memory - num_response_tokens - cushion,
-            1 / 3,
-        ):
+        for query_part in SmartChunker(
+            encoder, max_num_tokens_per_memory - num_response_tokens - cushion, 1 / 3
+        ).chunk(query):
             memory.add(
                 {
                     "text": f"Prompt: {query_part}\nResponse: {response}",
@@ -255,9 +436,9 @@ def handle_large_memory_entries(
                 }
             )
     else:
-        for query_part in smart_chunk(
-            query, encoder, max_num_tokens_per_memory - cushion, 1 / 3
-        ):
+        for query_part in SmartChunker(
+            encoder, max_num_tokens_per_memory - cushion, 1 / 3
+        ).chunk(query):
             memory.add(
                 {
                     "text": f"Prompt: {query_part}",
@@ -265,9 +446,9 @@ def handle_large_memory_entries(
                 }
             )
 
-        for response_part in smart_chunk(
-            response, encoder, max_num_tokens_per_memory - cushion, 1 / 3
-        ):
+        for response_part in SmartChunker(
+            encoder, max_num_tokens_per_memory - cushion, 1 / 3
+        ).chunk(response):
             memory.add(
                 {
                     "text": f"Response: {response_part}",
@@ -289,35 +470,6 @@ def handle_long_chat_history(encoder, chat_history, max_chat_history_tokens):
             break
         shortened_messages.append(message)
     return ChatHistory(shortened_messages)
-
-
-def chunk(text, encoder, chunk_size, overlap_factor):
-    """
-    Chunks text into chunks of size chunk_size (token units) with overlap.
-    """
-    overlap = int(chunk_size * overlap_factor)
-    tokens = encoder.encode(text)
-
-    chunked_tokens = [
-        tokens[i : i + chunk_size] for i in range(0, len(tokens), chunk_size - overlap)
-    ]
-
-    return [encoder.decode(chunk) for chunk in chunked_tokens]
-
-
-def smart_chunk(text, encoder, chunk_size, overlap_factor):
-    """
-    Chunks text into chunks of size chunk_size with overlap, but
-    will first try to split on '\n\n' or more '\n's without overlap.
-    """
-    split_text = re.split(r"\n{2,}", text)  # Split text on '\n\n' or more '\n's
-    result = []
-
-    for substring in split_text:
-        if len(substring) > 0:
-            result.extend(chunk(substring, encoder, chunk_size, overlap_factor))
-
-    return result
 
 
 def get_input(prompt_text="\nPrompt: "):
@@ -345,6 +497,80 @@ def get_input(prompt_text="\nPrompt: "):
     return prompt
 
 
+def create_self_reflect_flow(verbose):
+    """
+    Create a flow to reflect on the last response (using chat history).
+
+    :return: a chat flow object that takes ("prompt") and answer_flow chat history, and outputs ("reflection")
+    """
+    reflection_flow = ChatFlow.from_dicts(
+        [
+            {
+                Role.SYSTEM: "You are a diligent editor. You want to improve all of your responses."
+            },
+            {
+                Role.USER: "Is your last response to the prompt valid and correct? The prompt to your response is below.\n\n"
+                "Prompt: {prompt}\n\n"
+                "Only respond using the following format:\n"
+                "Validity:\n"
+                " - the correctness of the response to the prompt and any problems to this\n"
+                "Edits:\n"
+                " - any edits that need to be made to improve the response\n"
+                "Revised Response: the rewritten entire final response with any changes needed to make it a better response to the prompt (include all suggested edits; do not refer at all about the previous response in this revision)"
+            },
+            {Role.ASSISTANT: "{reflection}"},
+        ],
+        verbose=verbose,
+    )
+
+    return reflection_flow
+
+
+def create_assumption_clarification_flow(verbose):
+    """
+    Creates a flow to state possibly needed clarifications and assumptions.
+
+    :return: a chat flow that takes ("prompt") and outputs ("clarifications", "assumptions")
+    """
+    clarity_request_flow = ChatFlow.from_dicts(
+        [
+            {
+                Role.SYSTEM: "You are acting as a diligent critic and clarity requester. You want the prompt to have enough information to reliably respond."
+            },
+            {
+                Role.USER: "Before you actually respond to the last prompt below, is there anything that would need to be clarified? Use the previous conversation for context. The prompt is addressed to you, do not respond to the prompt or explain, but only ask for clarification if any is needed.\n\n"
+                "Prompt: {prompt}\n\n"
+                "Only respond using the following format:\n"
+                "Clarifications:\n"
+                " - bullet list all clarifications that you would need to more concisely respond to the prompt without making any assumptions. List at least 1."
+            },
+            {Role.ASSISTANT: "{clarifications}"},
+        ],
+        verbose=True,
+    )
+
+    assumption_request_flow = ChatFlow.from_dicts(
+        [
+            {
+                Role.SYSTEM: "You are acting as a diligent critic and assumption identifier. You want to outline all your assumptions and unknowns before responding."
+            },
+            {
+                Role.USER: "Before you actually respond to the last prompt below, is there anything that is unknown or being assumed? Use the previous conversation for context. The prompt is addressed to you, but do not respond to the prompt or explain, but only list assumptions.\n\n"
+                "Prompt: {prompt}\n\n"
+                "Only respond using the following format:\n"
+                "Assumptions:\n"
+                " - bullet list all assumptions and resolves to them that you are making in order to respond to the prompt. List at least 1."
+            },
+            {Role.ASSISTANT: "{assumptions}"},
+        ],
+        verbose=True,
+    )
+
+    return ConcurrentChatFlows(
+        [clarity_request_flow, assumption_request_flow], verbose=verbose
+    )
+
+
 def create_respond_flow(
     memory,
     encoder,
@@ -354,6 +580,7 @@ def create_respond_flow(
     max_num_docs,
     memory_score_threshold,
     max_num_context_tokens,
+    summarize_context,
     only_use_memory,
     verbose,
 ):
@@ -380,6 +607,7 @@ def create_respond_flow(
         max_num_docs,
         memory_score_threshold,
         max_num_context_tokens,
+        summarize_context,
         encoder,
     )
     answer_flow = create_answer_flow()
@@ -502,6 +730,7 @@ def create_prepare_context_flow(
     max_num_docs,
     memory_score_threshold,
     max_num_context_tokens,
+    summarize_context,
     encoder,
 ):
     """
@@ -511,13 +740,29 @@ def create_prepare_context_flow(
     1. Gather context from memory using a standalone query based off of the prompt
     2. Gather context from relevant databases (Google, General Knowledge etc.)
     3. Sort and Remove excess documents
-    4. Create a single context string containing all the documents upto a token limit
+    4. Summarize each document (optional)
+    5. Create a single context string containing all the documents upto a token limit
 
     :return: a chat flow object that takes ("memory", "relevancy", "document", "database_names", "query")
              and outputs ("context", "sources")
     """
     google_search = GoogleSearchTool(
         os.getenv("GOOGLE_API_KEY"), os.getenv("GOOGLE_CSE_ID")
+    )
+
+    prompted_summarization_flow = ChatFlow.from_dicts(
+        [
+            {
+                Role.SYSTEM: "You are a summarizer and prompt responder. If the prompt cannot be responded to directly from the text, you provide a detailed summary of the text as your response."
+            },
+            {
+                Role.USER: "{text}\n\n----\n\n"
+                "Using the above text, respond to the following prompt:\n\n"
+                "Prompt: {prompt}\n\n"
+                "(if the prompt cannot be answered using the text, summarize the text; do not refer to the prompt or text at all, just directly respond)"
+            },
+            {Role.ASSISTANT: "{prompted_summarization}"},
+        ]
     )
 
     def prepare_context_func(variables, chat_llm, input_chat_history):
@@ -569,7 +814,7 @@ def create_prepare_context_flow(
                 search_result = google_search.use({"query": query})
                 # Scores could be actually calcualted if embedded the results and compared
                 all_docs.append(
-                    ("top google search result".upper(), search_result, "Google", 0.7)
+                    ("top google search result".upper(), search_result, "Google", 0.75)
                 )
 
             if "general knowledge" in ratings and ratings["general knowledge"] > 1:
@@ -578,13 +823,34 @@ def create_prepare_context_flow(
                         "general knowledge".upper(),
                         document,
                         "GPT General Knowledge",
-                        0.65,
+                        0.74,
                     )
                 )
 
             # add code here for other databases
 
         all_docs = sorted(all_docs, key=lambda x: x[3], reverse=True)[:max_num_docs]
+
+        if summarize_context:
+
+            def summarize_doc(args):
+                name, doc, source, score = args
+                variables, _ = prompted_summarization_flow(
+                    {"text": doc, "prompt": query}, chat_llm=chat_llm
+                )
+                short_doc = variables["prompted_summarization"]
+
+                # Add logit to not run if already small, if summarizon large than input, dont use??
+                # Improve summarize prompt, sometimes wont summarize if not relevant, has boiler plate,
+                # print(doc)
+                # print(short_doc)
+                # print('\n')
+
+                return (name, short_doc, source, score)
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                concise_all_docs = list(executor.map(summarize_doc, all_docs))
+            all_docs = concise_all_docs
 
         current_name = None
         text = ""
@@ -599,7 +865,7 @@ def create_prepare_context_flow(
                 break
 
             text += text_seg
-            sources[source] = min(sources.get(source, score), score)
+            sources[source] = max(sources.get(source, score), score)
 
         sources = sorted(sources.items(), key=lambda x: x[1], reverse=True)
 
@@ -677,14 +943,19 @@ def get_args():
     parser.add_argument(
         "--memory_score_threshold",
         type=float,
-        default=0.65,
-        help="Threshold for memory queries. A value of .8 is strict and .5 is loose.",
+        default=0.7,
+        help="Threshold for memory queries. A value of .8 is strict and .7 is loose.",
     )
     parser.add_argument(
         "--combine_threshold",
         type=float,
         default=0.1,
         help="Threshold for combining memory queries.",
+    )
+    parser.add_argument(
+        "--summarize_context",
+        action="store_true",
+        help="Each document in context will be summarized, attempting to extract the relevant parts.",
     )
     parser.add_argument(
         "--memory_file",
