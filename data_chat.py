@@ -126,7 +126,7 @@ class DataChat:
 
         if self.chat_history is not None:
             self.chat_history = history
-            self.handle_long_chat_history()
+            self.chat_history = self.handle_long_chat_history()
 
             self.update_memory(prompt, response)
         return response, sources, total_tokens
