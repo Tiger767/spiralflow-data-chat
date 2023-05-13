@@ -93,13 +93,19 @@ class DataChat:
             )
         response_list, sources_list, history_list = self.generate_responses(prompts)
 
+        total_tokens_list = []
+        for history in history_list:
+            total_tokens_list.append(0)
+            for message in history.messages:
+                total_tokens_list[-1] += len(self.encoder.encode(message.content))
+
         if self.chat_history is not None:
             # Since concurrent prompts, wont actually add to history
 
             for prompt, response in zip(prompts, response_list):
                 self.update_memory(prompt, response)
 
-        return response_list, sources_list
+        return response_list, sources_list, total_tokens_list
 
     def process_single_prompt(self, prompt, instruction=""):
         num_tokens = len(self.encoder.encode(prompt))
@@ -113,12 +119,17 @@ class DataChat:
         )
         response, sources, history = response[0], sources[0], history[0]
 
+        total_tokens = 0
+        for message in history.messages:
+            print(f'\n"{message.content}"\n')
+            total_tokens += len(self.encoder.encode(message.content))
+
         if self.chat_history is not None:
             self.chat_history = history
             self.handle_long_chat_history()
 
             self.update_memory(prompt, response)
-        return response, sources
+        return response, sources, total_tokens
 
     def process_long_text_chunk(self, prompt, long_text):
         """
@@ -141,13 +152,19 @@ class DataChat:
 
         response_list, sources_list, history_list = self.generate_responses(prompts)
 
+        total_tokens_list = []
+        for history in history_list:
+            total_tokens_list.append(0)
+            for message in history.messages:
+                total_tokens_list[-1] += len(self.encoder.encode(message.content))
+
         if self.chat_history is not None:
             # Since concurrent prompts and long text, wont actually add to history
 
             for prompt, response in zip(prompts, response_list):
                 self.update_memory(prompt, response)
 
-        return response_list, sources_list
+        return response_list, sources_list, total_tokens_list
 
     def clarify_prompt(self, prompt):
         variables, _ = self.ac_flow(
@@ -565,6 +582,7 @@ class DataChat:
             sources = {}
             for name, doc, source, score in all_docs:
                 text_seg = f"\n{name}:\n{doc}\n" if name != current_name else doc + "\n"
+                # text_seg += f"Source: {source}\n\n"
                 current_name = name
                 num_tokens += len(self.encoder.encode(text_seg))
 
@@ -699,10 +717,14 @@ class DataChat:
 
                 print(f"\nResponding now.")
 
-                response_list, sources_list = self.process_multiple_prompts(prompts)
+                (
+                    response_list,
+                    sources_list,
+                    num_tokens_list,
+                ) = self.process_multiple_prompts(prompts)
 
-                for prompt, response, sources in zip(
-                    prompts, response_list, sources_list
+                for prompt, response, sources, num_tokens in zip(
+                    prompts, response_list, sources_list, num_tokens_list
                 ):
                     print("\nPrompt:", prompt)
 
@@ -711,6 +733,7 @@ class DataChat:
                         print(f"{ndx + 1}. {source[0]}")
 
                     print("\nResponse:", response)
+                    print(f"\nNumber of tokens: {num_tokens / 1000:.1f}K")
                     print()
 
             # Check for long text chunking and processing
@@ -731,12 +754,15 @@ class DataChat:
                     prompt, long_text
                 )
 
-                for response, sources in zip(response_list, sources_list):
+                for response, sources, num_tokens in zip(
+                    response_list, sources_list, num_tokens_list
+                ):
                     print("\nTop Possible Sources:")
                     for ndx, source in enumerate(sources):
                         print(f"{ndx + 1}. {source[0]}")
 
                     print("\nResponse:", response)
+                    print(f"\nNumber of tokens: {num_tokens / 1000:.1f}K")
                     print()
 
             # Process single prompt
@@ -750,7 +776,7 @@ class DataChat:
 
                 print(f"\nResponding now.")
 
-                response, sources = self.process_single_prompt(
+                response, sources, num_tokens = self.process_single_prompt(
                     prompt, instruction=instruction
                 )
 
@@ -759,6 +785,7 @@ class DataChat:
                     print(f"{ndx + 1}. {source[0]}")
 
                 print("\nResponse:", response)
+                print(f"\nNumber of tokens: {num_tokens / 1000:.1f}K")
 
 
 def get_args():
