@@ -41,9 +41,14 @@ conda install -c conda-forge pytorch faiss-cpu -y
 Usage
 -----
 
-To run the Spiralflow Data Chat chatbot, simply execute the main script:
+To run the Spiralflow Data Chat chatbot website, run the below command and go to the respective website:
 
-bash
+```bash
+python main.py
+```
+
+
+To run the chatbot in the terminal, simply execute the chatbot script:
 
 ```bash
 python chatbot.py
@@ -71,8 +76,6 @@ You can also use command-line arguments to customize the chatbot's behavior, suc
 
 For example:
 
-bash
-
 ```bash
 python chatbot.py --memory_file memory_default.pkl --temperature 0.1 --enable_chat_history
 ```
@@ -89,8 +92,6 @@ The `ingest.py` script helps you to ingest data and create memory for the Spiral
 2.  Remove the placeholder `memory_default.pkl` file from the repository.
 3.  Run the `ingest.py` script:
 
-bash
-
 ```bash
 python ingest.py
 ```
@@ -105,8 +106,6 @@ You can customize the data ingestion process using command-line arguments:
 *   `--dry_run`: Perform a dry run, stopping before embeddings are declared.
 
 For example, to ingest data from a directory named `my_data` with a chunk size of 500, an overlap of 200, and an input format of "text", you can run:
-
-bash
 
 ```bash
 python ingest.py -d my_data -c 500 -o 200

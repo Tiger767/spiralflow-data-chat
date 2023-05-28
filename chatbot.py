@@ -405,7 +405,9 @@ class ContextChatbot(Chatbot):
             }
         )
 
-    def create_respond_flow(self, settings):
+    # Need to implement chat for passing context
+
+    def create_respond_flow(self, settings: Dict[str, Any]) -> ChatFlow:
         """
         Creates a full respond flow.
 
@@ -435,7 +437,7 @@ class ContextChatbot(Chatbot):
 
         return respond_flow
 
-    def create_answer_flow(self, settings):
+    def create_answer_flow(self, settings: Dict[str, Any]) -> ChatFlow:
         """
         Create the flow for responding to a prompt using previous gathered context from a query.
 
@@ -464,24 +466,45 @@ class ContextChatbot(Chatbot):
 class MemoryChatbot(ContextChatbot):
     def __init__(
         self,
-        memory=None,
-        memory_file="memory_default.pkl",
-        max_num_query_results=14,
-        num_query_results=20,
-        max_memory_context_tokens=1500,
-        memory_score_threshold=0.7,
-        combine_threshold=0.1,
-        summarize_context=False,
-        openai_chat_model="gpt-3.5-turbo",
-        max_num_prompt_tokens=2000,
-        max_num_tokens_per_memory=500,
-        temperature=0.3,
-        persona="",
-        enable_chat_history=False,
-        max_chat_history_tokens=2000,
-        enable_prompt_response_memory=False,
-        verbose=False,
-    ):
+        memory: Optional[Memory] = None,
+        memory_file: str = "memory_default.pkl",
+        max_num_query_results: int = 14,
+        num_query_results: int = 20,
+        max_memory_context_tokens: int = 1500,
+        memory_score_threshold: float = 0.7,
+        combine_threshold: float = 0.1,
+        summarize_context: bool = False,
+        openai_chat_model: str = "gpt-3.5-turbo",
+        max_num_prompt_tokens: int = 2000,
+        max_num_tokens_per_memory: int = 500,
+        temperature: float = 0.3,
+        persona: str = "",
+        enable_chat_history: bool = False,
+        max_chat_history_tokens: int = 2000,
+        enable_prompt_response_memory: bool = False,
+        verbose: bool = False,
+    ) -> None:
+        """
+        Initialize a MemoryChatbot.
+
+        :param memory: Memory object to use, default is None.
+        :param memory_file: File path to save memory data.
+        :param max_num_query_results: Maximum number of memory query results.
+        :param num_query_results: Number of query results.
+        :param max_memory_context_tokens: Maximum number of memory context tokens.
+        :param memory_score_threshold: Memory score threshold.
+        :param combine_threshold: Combine threshold.
+        :param summarize_context: Whether to summarize context or not.
+        :param openai_chat_model: OpenAI chat model to use.
+        :param max_num_prompt_tokens: Maximum number of prompt tokens.
+        :param max_num_tokens_per_memory: Maximum number of tokens per memory.
+        :param temperature: Randomness of the model's responses.
+        :param persona: Persona that the chatbot should adopt.
+        :param enable_chat_history: Whether to enable chat history or not.
+        :param max_chat_history_tokens: Maximum number of chat history tokens.
+        :param enable_prompt_response_memory: Whether to enable prompt response memory or not.
+        :param verbose: Whether to print verbose output or not.
+        """
         super().__init__(
             openai_chat_model=openai_chat_model,
             temperature=temperature,
@@ -514,12 +537,24 @@ class MemoryChatbot(ContextChatbot):
 
     def chat(
         self,
-        prompts,
-        instructions=None,
-        chat_history=None,
-        split_long_prompt=None,
-        **kwargs,
-    ):
+        prompts: Union[str, List[str]],
+        instructions: Optional[Union[str, List[str]]] = None,
+        chat_history: Optional[ChatHistory] = None,
+        split_long_prompt: Optional[bool] = None,
+        **kwargs: Dict,
+    ) -> Tuple[
+        List[str], List[str], List[ChatHistory], List[int], Optional[ChatHistory]
+    ]:
+        """
+        :param prompts: Single prompt or list of prompts.
+        :param instructions: Single instruction or list of instructions, default is None.
+        :param chat_history: Chat history, default is None.
+        :param split_long_prompt: Whether to split long prompts or not, default is None.
+        :param kwargs: Additional arguments.
+
+        :returns: A tuple containing lists of responses, sources, histories, and total tokens,
+                  and an optional chat history.
+        """
         if not isinstance(prompts, list):
             prompts = [prompts]
         if instructions is not None and not isinstance(instructions, list):
@@ -571,6 +606,10 @@ class MemoryChatbot(ContextChatbot):
 
         chat_history = self._get_history(settings, chat_history)
 
+        if chat_history is not None:
+            for message in chat_history.messages:
+                print(message)
+
         if instructions is None:
             instructions = [""] * len(prompts)
 
@@ -605,9 +644,15 @@ class MemoryChatbot(ContextChatbot):
             chat_history,
         )
 
-    def _update_memory(self, settings, prompt, response):
+    def _update_memory(
+        self, settings: Dict[str, Any], prompt: str, response: str
+    ) -> None:
         """
         Adds prompt/response pairs to memory.
+
+        :param settings: A dictionary of settings.
+        :param prompt: The prompt string.
+        :param response: The response string.
         """
         num_prompt_tokens = len(self.encoder.encode(prompt))
         num_response_tokens = len(self.encoder.encode(response))
@@ -633,18 +678,24 @@ class MemoryChatbot(ContextChatbot):
 
     def _handle_large_memory_entries(
         self,
-        settings,
-        prompt,
-        response,
-        num_prompt_tokens,
-        num_response_tokens,
-    ):
+        settings: Dict,
+        prompt: str,
+        response: str,
+        num_prompt_tokens: int,
+        num_response_tokens: int,
+    ) -> None:
         """
         Adds long past prompt/response pairs to the memory.
         This done by attempting to chunk the respective long prompt or
         response while still including the entire smaller portion.
         However, if both the prompt and response are too long, then
         both are chunked and added separately.
+
+        :param settings: A dictionary of settings.
+        :param prompt: The prompt string.
+        :param response: The response string.
+        :param num_prompt_tokens: Number of prompt tokens.
+        :param num_response_tokens: Number of response tokens.
         """
         if num_prompt_tokens < settings["max_num_tokens_per_memory"] / 3:
             for response_part in SmartChunker(
@@ -699,7 +750,7 @@ class MemoryChatbot(ContextChatbot):
                     }
                 )
 
-    def create_respond_flow(self, settings):
+    def create_respond_flow(self, settings: Dict[str, Any]) -> ChatFlow:
         """
         Creates a full respond flow.
 
@@ -725,7 +776,7 @@ class MemoryChatbot(ContextChatbot):
 
         return respond_flow
 
-    def create_contextualize_flow(self, settings):
+    def create_contextualize_flow(self, settings: Dict[str, Any]) -> ChatFlow:
         """
         Creates a prompt standalonizer chat flow.
 
@@ -748,7 +799,7 @@ class MemoryChatbot(ContextChatbot):
             verbose=settings["verbose"],
         )
 
-    def create_memory_flow(self, settings):
+    def create_memory_flow(self, settings: Dict[str, Any]) -> ChatFlow:
         """
         Create the memory chat flow.
 
@@ -774,7 +825,7 @@ class MemoryChatbot(ContextChatbot):
             verbose=settings["verbose"],
         )
 
-    def create_prepare_context_flow(self, settings):
+    def create_prepare_context_flow(self, settings: Dict[str, Any]) -> ChatFlow:
         """
         Create the flow for gathering context for a prompt.
 

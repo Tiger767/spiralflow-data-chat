@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chatbot</title>
+    <link href="https://unpkg.com/tailwindcss@^2/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .chat-body {
+            width: 80%;
+            margin: 50px auto;
+            padding: 20px;
+            border-radius: 10px;
+            background-color: #202020;
+        }
+        .card-body {
+            background-color: #333;
+            color: #fff;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .server-message, .client-message {
+            background-color: #444;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            word-wrap: break-word;
+        }
+        .form-inline {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        .form-control {
+            width: 100%;
+            height: auto;
+            background-color: #333;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        #send {
+            background-color: #4C4CFF;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            width: 100%;
+        }
+        .form-message {
+          margin-top: 10px;
+        }
+        .input-wrapper {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        .button-wrapper {
+            flex-shrink: 0;
+        }
+        .hidden {
+            display: none;
+        }
+        #thread-buttons {
+            padding: 10px;
+            background: #444;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        #settings-form-inner {
+            padding: 20px;
+            background: #444;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        #settings-button, #cancel-button {
+            margin: 10px 0;
+        }
+        .btn {
+            display: inline-block;
+            font-weight: 500;
+            color: #fff;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            background-color: #4C4CFF;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+        }
+    </style>
+    <script>
+        var endpoint = "ws://localhost:7000/chat";
+        var ws = new WebSocket(endpoint);
+        // Receive message from server word by word. Display the words as they are received.
+        ws.onmessage = function (event) {
+            function makeText(text) {
+                return text
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;")
+                    .replace(/\n/g, '<br>')
+                    .replace(/ /g, '&nbsp;');
+            }
+
+            var messages = document.getElementById('messages');
+            var data = JSON.parse(event.data);
+            console.log(data);
+
+            if (data.thread !== document.getElementById('current-thread').innerText)
+                return;
+
+            if (data.type === 'list_threads') {
+                const threadNames = data.message;
+
+                // Add each thread
+                for (const threadName of threadNames) {
+                    addThreadWithName(threadName);
+                }
+            }
+
+            if (data.sender === "assistant") {
+                if (data.type === "start") {
+                    var header = document.getElementById('header');
+                    header.innerHTML = "Preparing response...";
+                    var div = document.createElement('div');
+                    div.className = 'server-message';
+                    var p = document.createElement('p');
+                    p.innerHTML = "<strong>" + "Assistant: " + "</strong>";
+                    var deleteButton = document.createElement('button');
+                    deleteButton.className = 'delete-button';
+                    deleteButton.innerText = 'Delete';
+                    deleteButton.addEventListener('click', sendDeleteMessage);
+                    div.appendChild(deleteButton);
+                    div.appendChild(p);
+                    messages.appendChild(div);
+                } else if (data.type === "stream") {
+                    var header = document.getElementById('header');
+                    header.innerHTML = "Assistant is typing...";
+                    var p = messages.lastChild.lastChild;
+                    p.innerHTML += makeText(data.message);
+                } else if (data.type === "history") {
+                    console.log(data.message);
+                    var div = document.createElement('div');
+                    div.className = 'server-message';
+                    var p = document.createElement('p');
+                    p.innerHTML = "<strong>" + "Assistant: " + "</strong>" + makeText(data.message);
+                    var deleteButton = document.createElement('button');
+                    deleteButton.className = 'delete-button';
+                    deleteButton.innerText = 'Delete';
+                    deleteButton.addEventListener('click', sendDeleteMessage);
+                    div.appendChild(deleteButton);
+                    div.appendChild(p);
+                    messages.appendChild(div);
+                } else if (data.type === "info") {
+                    var header = document.getElementById('header');
+                    header.innerHTML = data.message;
+                } else if (data.type === "end") {
+                    var header = document.getElementById('header');
+                    header.innerHTML = "Ask a question";
+                    var button = document.getElementById('send');
+                    button.innerHTML = "Send";
+                    button.disabled = false;
+                    var p = messages.lastChild.lastChild;
+                    p.innerHTML += "<br><br>" + data.message;
+                } else if (data.type === "error") {
+                    var header = document.getElementById('header');
+                    header.innerHTML = "Ask a question";
+                    var button = document.getElementById('send');
+                    button.innerHTML = "Send";
+                    button.disabled = false;
+                    var p = messages.lastChild.lastChild;
+                    p.innerHTML += makeText(data.message);
+                }
+            } else {
+                if (data.type === "stream") {
+                    var div = document.createElement('div');
+                    div.className = 'client-message';
+                    var p = document.createElement('p');
+                    p.innerHTML = "<strong>" + "User: " + "</strong>" + makeText(data.message);
+                    var deleteButton = document.createElement('button');
+                    deleteButton.className = 'delete-button';
+                    deleteButton.innerText = 'Delete';
+                    deleteButton.addEventListener('click', sendDeleteMessage);
+                    div.appendChild(deleteButton);
+                    div.appendChild(p);
+                    messages.appendChild(div);
+                } else if (data.type === "history") {
+                    console.log(data.message);
+                    var div = document.createElement('div');
+                    div.className = 'client-message';
+                    var p = document.createElement('p');
+                    p.innerHTML = "<strong>" + "User: " + "</strong>" + makeText(data.message);
+                    var deleteButton = document.createElement('button');
+                    deleteButton.className = 'delete-button';
+                    deleteButton.innerText = 'Delete';
+                    deleteButton.addEventListener('click', sendDeleteMessage);
+                    div.appendChild(deleteButton);
+                    div.appendChild(p);
+                    messages.appendChild(div);
+                } else if (data.type === "setting") {
+                    document.getElementById('memory-file').value = data.message["memory_file"];
+                    document.getElementById('openai-chat-model').value = data.message["openai_chat_model"];
+                    document.getElementById('persona').value = data.message["persona"];
+                    document.getElementById('temperature').value = data.message["temperature"];
+                    document.getElementById('temperatureValue').innerText = data.message["temperature"];
+                }
+            }
+            // Scroll to the bottom of the chat
+            messages.scrollTop = messages.scrollHeight;
+        };
+        // Send message to server
+        function sendMessage(event) {
+            event.preventDefault();
+            var message = document.getElementById('messageText').value;
+            if (message === "") {
+                return;
+            }
+            ws.send(JSON.stringify({
+               "message": message,
+               "sender": "user",
+               "type": "stream",
+               "thread": document.getElementById('current-thread').innerText
+            }));
+            document.getElementById('messageText').value = "";
+
+            // Turn the button into a loading button
+            var button = document.getElementById('send');
+            button.innerHTML = "Loading...";
+            button.disabled = true;
+        }
+
+        function sendDeleteMessage(event) {
+            // Get the index of the message to be deleted
+            var messageDiv = event.target.parentNode;
+            var index = Array.from(messageDiv.parentNode.children).indexOf(messageDiv);
+
+            ws.send(JSON.stringify({
+                "message": index,
+                "sender": "user",
+                "type": "delete_message",
+                "thread": document.getElementById('current-thread').innerText
+            }));
+
+            // Remove the message from the DOM
+            messageDiv.parentNode.removeChild(messageDiv);
+        }
+
+        function sendSettings(event, empty=false) {
+            event.preventDefault();
+
+            if (empty) {
+                ws.send(JSON.stringify({
+                    "message": null,
+                    "sender": "user",
+                    "type": "setting",
+                    "thread": document.getElementById('current-thread').innerText
+                }));
+                return;
+            }
+
+            const message = {};
+            const memoryFile = document.getElementById('memory-file').value
+            const openaiChatModel = document.getElementById('openai-chat-model').value
+            const persona = document.getElementById('persona').value;
+            const temperature = document.getElementById('temperature').value;
+
+            if (memoryFile !== "") {
+                message["memory_file"] = memoryFile
+            }
+            if (persona !== "") {
+                message["persona"] = persona;
+            }
+            if (temperature !== "") {
+                message["temperature"] = parseFloat(temperature);
+            }
+            message["openai_chat_model"] = openaiChatModel
+
+            ws.send(JSON.stringify({
+               "message": message,
+               "sender": "user",
+               "type": "setting",
+               "thread": document.getElementById('current-thread').innerText
+            }));
+
+            document.getElementById('settings-form').classList.add('hidden');
+        }
+
+        function autoResize(textarea) {
+            textarea.style.height = "auto";
+            textarea.style.height = textarea.scrollHeight + "px";
+        }
+
+        function addThread(event) {
+            event.preventDefault();
+
+            const threadName = document.getElementById('thread-name').value;
+            if (threadName === "") {
+                return;
+            }
+
+            document.getElementById('thread-name').value = "";
+            document.getElementById('new-thread-form').classList.add('hidden');
+
+            addThreadWithName(threadName);
+
+            selectThread(threadName);
+        }
+
+        function addThreadWithName(threadName) {
+            const threadButtons = document.getElementById('thread-buttons');
+            const div = document.createElement('div');
+            div.className = 'thread-div m-3';
+
+            const threadButton = document.createElement('button');
+            threadButton.className = 'btn btn-secondary';
+            threadButton.innerText = threadName;
+            threadButton.addEventListener('click', () => selectThread(threadName));
+
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'btn btn-danger ml-2';
+            deleteButton.innerText = 'Delete';
+            deleteButton.addEventListener('click', (event) => deleteThread(threadName, event));
+
+            div.appendChild(threadButton);
+            div.appendChild(deleteButton);
+
+            threadButtons.appendChild(div);
+        }
+
+        function selectThread(threadName) {
+            document.getElementById('current-thread').innerText = threadName;
+
+            const messages = document.getElementById('messages');
+            while (messages.firstChild) {
+                messages.firstChild.remove();
+            }
+
+            document.getElementById('settings-form').classList.add('hidden');
+            document.getElementById('new-thread-form').classList.add('hidden');
+
+            ws.send(JSON.stringify({ 
+                'message': null, 
+                'sender': 'user', 
+                'type': 'history', 
+                'thread': threadName
+            }));
+        }
+
+        function deleteThread(threadName, event) {
+            event.preventDefault();
+
+            // Get the button element
+            const button = event.target;
+
+            // Delete the thread buttons
+            button.parentNode.remove();
+
+            // Send a deleteThread message to the server
+            ws.send(JSON.stringify({
+                "message": null,
+                "sender": "user",
+                "type": "delete_thread",
+                "thread": threadName
+            }));
+
+            if (document.getElementById('current-thread').innerText === threadName) {
+                selectThread("default");
+            }
+        }
+
+        function listThreads() {
+            // Send a listThreads message to the server
+            ws.send(JSON.stringify({
+                "message": null,
+                "sender": "user",
+                "type": "list_threads",
+                "thread": "default"
+            }));
+        }
+
+        function sendInstruction(event) {
+            event.preventDefault();
+            var message = document.getElementById('instructionText').value;
+            if (message === "") {
+                return;
+            }
+            ws.send(JSON.stringify({
+               "message": message,
+               "sender": "user",
+               "type": "instruction",
+               "thread": document.getElementById('current-thread').innerText
+            }));
+            document.getElementById('instructionText').value = "";
+            document.getElementById('instructionText').placeholder = message;
+        }
+    </script>
+</head>
+<body class="bg-black" onload="(() => { selectThread('default'); listThreads(); })()">
+    <div class="chat-body card">
+        <div class="card-body p-5">
+            <button id="settings-button" class="btn btn-secondary" onclick="(() => { document.getElementById('settings-form').classList.toggle('hidden'); sendSettings(event, empty = true); })()">Settings</button>
+
+            <div id="settings-form" class="hidden" onsubmit="sendSettings(event)">
+                <form action="" id="settings-form-inner">
+                    <div class="form-group">
+                        <label for="memory-file">Memory File:</label>
+                        <input type="text" id="memory-file" name="memory-file" class="form-control" value="">
+                    </div>
+                    <div class="form-group">
+                        <label for="persona">Persona:</label>
+                        <input type="text" id="persona" name="persona" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="temperature">Temperature (0-1): <span id="temperatureValue">0.3</span></label>
+                        <input type="range" id="temperature" name="temperature" class="form-control" min="0" max="1" step="0.1" value="0.3" oninput="(() => { document.getElementById('temperatureValue').innerHTML = temperature.value; })()">
+                    </div>
+                    <div class="form-group">
+                        <label for="openai-chat-model">Model:</label>
+                        <select id="openai-chat-model" class="form-control">
+                            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                            <option value="gpt-4">gpt-4</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Update</button>
+                    <button type="button" id="cancel-button" class="btn btn-secondary" onclick="(() => { document.getElementById('settings-form').classList.add('hidden'); })()">Cancel</button>
+                </form>
+            </div>
+
+            <button id="new-thread-button" class="btn btn-secondary" onclick="(() => { document.getElementById('new-thread-form').classList.toggle('hidden'); })()">New Thread</button>
+
+            <div id="new-thread-form" class="hidden" onsubmit="addThread(event)">
+                <form action="" id="new-thread-form-inner">
+                    <div class="form-group">
+                        <label for="thread-name">Thread Name:</label>
+                        <input type="text" id="thread-name" name="thread-name" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Create</button>
+                    <button type="button" id="cancel-button" class="btn btn-secondary" onclick="(() => { document.getElementById('new-thread-form').classList.toggle('hidden'); })()">Cancel</button>
+                </form>
+            </div>
+
+            <div id="thread-buttons" class="mb-5"></div>
+
+            <h4 class="card-title text-center text-xl font-medium"> Chat Your Data - <span id="current-thread">default</span></h4>
+            <p class="card-text text-center text-sm" id="header"> Ask a question </p>
+            <hr class="border-gray-500 mb-5" style="margin-top: 20px;">
+            <div id="messages" class="overflow-auto" style="max-height: 800px;">
+            </div>
+            <form action="" class="form-inline mt-5" id="chat-form" onsubmit="sendMessage(event)">
+                <div class="input-wrapper">
+                    <textarea class="form-control" placeholder="Write your prompt" id="messageText" rows="2" oninput="autoResize(this)"></textarea>
+                </div>
+                <div class="button-wrapper">
+                    <button id="send" type="submit" class="btn btn-primary">Send</button>
+                </div>
+            </form>
+            <form action="" class="form-inline mt-5" id="chat-form" onsubmit="sendInstruction(event)">
+                <div class="input-wrapper">
+                    <input type="text" id="instructionText" class="form-control" value="" placeholder="Write your instruction">
+                </div>
+                <div class="button-wrapper">
+                    <button id="send" type="submit" class="btn btn-primary">Set</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
