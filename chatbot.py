@@ -122,6 +122,8 @@ class Chatbot:
             settings, chat_llm, chat_history, variables_list
         )
 
+        response_list = [response["response"] for response in response_list]
+
         total_tokens_list = self._get_history_num_tokens(history_list)
 
         if settings["enable_chat_history"]:

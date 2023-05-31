@@ -7,31 +7,52 @@ from pydantic import BaseModel, validator
 
 from spiralflow.message import Role, InputMessage
 from spiralflow.chat_history import ChatHistory
-from chatbot import MemoryChatbot
+from chatbot import Chatbot, MemoryChatbot
 
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 chatbot_default_settings = {
-    "memory_file": "memory_default.pkl",
+    "memory_file": None,
     "openai_chat_model": "gpt-3.5-turbo",
     "persona": "You are a very inteligent assistant.",
     "temperature": 0.3,
     "enable_chat_history": False,
-    "verbose": True
+    "verbose": True,
+    "chatbot_type": "default",
 }
 threads_data = {}
 
 
 def create_new_thread(thread_name):
     global threads_data
+
+    chatbot = get_chatbot(chatbot_default_settings)
+
     threads_data[thread_name] = {
         "chatbot_settings": dict(chatbot_default_settings),
-        "chatbot": MemoryChatbot(**chatbot_default_settings),
+        "chatbot": chatbot,
         "chat_history": ChatHistory(),
         "instruction": "",
     }
+
+def get_chatbot(settings):
+    settings = dict(settings)
+    chatbot_type = settings["chatbot_type"]
+    del settings["chatbot_type"]
+    if chatbot_type in ["memory"]:
+        if settings["memory_file"] is None:
+            settings["memory_file"] = "memory_default.pkl"
+        chatbot = MemoryChatbot(**settings)
+    elif chatbot_type in ["default", None]:
+        del settings["memory_file"]
+        chatbot = Chatbot(**settings)
+    else:
+        del settings["memory_file"]
+        chatbot = Chatbot(**settings)
+
+    return chatbot
 
 
 class ChatResponse(BaseModel):
@@ -108,7 +129,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         for k, v in new_settings.items()
                         if k in chatbot_default_settings
                     }
-                    thread_data["chatbot"] = MemoryChatbot(**new_settings)
+                    thread_data["chatbot"] = get_chatbot(new_settings)
                     thread_data["chatbot_settings"] = new_settings
 
                 resp.message = thread_data["chatbot_settings"]
@@ -126,19 +147,34 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json(start_resp.dict())
 
                 # Get response
-                (
-                    response,
-                    sources,
-                    history_list,
-                    total_tokens_list,
-                    chat_history_full,
-                ) = thread_data["chatbot"].chat(
-                    prompt,
-                    instructions=thread_data["instruction"],
-                    chat_history=thread_data["chat_history"]
-                    if thread_data["chatbot_settings"]["enable_chat_history"]
-                    else None,
-                )
+                if thread_data["chatbot_settings"]["chatbot_type"] == "memory":
+                    (
+                        response,
+                        sources,
+                        history_list,
+                        total_tokens_list,
+                        chat_history_full,
+                    ) = thread_data["chatbot"].chat(
+                        prompt,
+                        instructions=thread_data["instruction"],
+                        chat_history=thread_data["chat_history"]
+                        if thread_data["chatbot_settings"]["enable_chat_history"]
+                        else None,
+                    )
+                else:
+                    (
+                        response,
+                        history_list,
+                        total_tokens_list,
+                        chat_history_full,
+                    ) = thread_data["chatbot"].chat(
+                        prompt + f" ({thread_data['instruction']})",
+                        chat_history=thread_data["chat_history"]
+                        if thread_data["chatbot_settings"]["enable_chat_history"]
+                        else None,
+                    )
+                    sources = [None]
+
                 response, sources, num_tokens = (
                     response[0],
                     sources[0],
@@ -152,10 +188,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Format response
                 full_response = ""
                 full_response += f"\n{response}"
-                full_response += "\n\nTop Possible Sources:\n"
-                for ndx, source in enumerate(sources):
-                    full_response += f"{ndx + 1}. {source[0]}\n"
-                full_response += f"\nNumber of tokens: {num_tokens / 1000:.1f}K"
+                if sources is not None:
+                    full_response += "\n\nTop Possible Sources:\n"
+                    for ndx, source in enumerate(sources):
+                        full_response += f"{ndx + 1}. {source[0]}\n"
+                full_response += f"\n\nNumber of tokens: {num_tokens / 1000:.1f}K"
 
                 # Send response
                 stream_resp = ChatResponse(

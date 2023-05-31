@@ -206,6 +206,7 @@
                     div.appendChild(p);
                     messages.appendChild(div);
                 } else if (data.type === "setting") {
+                    document.getElementById('chatbot-type').value = data.message["chatbot_type"];
                     document.getElementById('memory-file').value = data.message["memory_file"];
                     document.getElementById('openai-chat-model').value = data.message["openai_chat_model"];
                     document.getElementById('persona').value = data.message["persona"];
@@ -267,6 +268,7 @@
             }
 
             const message = {};
+            const chatbotType = document.getElementById('chatbot-type').value
             const memoryFile = document.getElementById('memory-file').value
             const openaiChatModel = document.getElementById('openai-chat-model').value
             const persona = document.getElementById('persona').value;
@@ -411,6 +413,13 @@
             <div id="settings-form" class="hidden" onsubmit="sendSettings(event)">
                 <form action="" id="settings-form-inner">
                     <div class="form-group">
+                        <label for="chatbot-type">Chatbot Type:</label>
+                        <select id="chatbot-type" class="form-control">
+                            <option value="default">default</option>
+                            <option value="memory">memory</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label for="memory-file">Memory File:</label>
                         <input type="text" id="memory-file" name="memory-file" class="form-control" value="">
                     </div>
@@ -449,8 +458,9 @@
 
             <div id="thread-buttons" class="mb-5"></div>
 
-            <h4 class="card-title text-center text-xl font-medium"> Chat Your Data - <span id="current-thread">default</span></h4>
-            <p class="card-text text-center text-sm" id="header"> Ask a question </p>
+            <h4 class="card-title text-center text-xl font-medium">Chatbot</h4>
+            <p class="card-text text-center text-sm">Current Thread: <span id="current-thread">default</span></p>
+            <p class="card-text text-center text-sm" id="header">Ask a question</p>
             <hr class="border-gray-500 mb-5" style="margin-top: 20px;">
             <div id="messages" class="overflow-auto" style="max-height: 800px;">
             </div>

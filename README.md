@@ -34,7 +34,7 @@ cd spiralflow-data-chat
 bash
 
 ```bash
-pip install spiralflow
+pip install spiralflow fastapi
 conda install -c conda-forge pytorch faiss-cpu -y
 ```
 
