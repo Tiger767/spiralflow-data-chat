@@ -16,9 +16,9 @@ templates = Jinja2Templates(directory="templates")
 chatbot_default_settings = {
     "memory_file": None,
     "openai_chat_model": "gpt-3.5-turbo",
-    "persona": "You are a very inteligent assistant.",
+    "persona": "You are a very intelligent assistant.",
     "temperature": 0.3,
-    "enable_chat_history": False,
+    "enable_chat_history": True,
     "verbose": True,
     "chatbot_type": "default",
 }
@@ -40,6 +40,16 @@ def create_new_thread(thread_name):
 def get_chatbot(settings):
     settings = dict(settings)
     chatbot_type = settings["chatbot_type"]
+
+    if "16k" in settings["openai_chat_model"]:
+        settings["max_num_prompt_tokens"] = 8000
+        settings["max_chat_history_tokens"] = 8000
+
+        if chatbot_type in ["memory"]:
+            settings["max_memory_context_tokens"] = 3000
+            settings["max_num_query_results"] = 30
+            settings["num_query_results"] = 40
+
     del settings["chatbot_type"]
     if chatbot_type in ["memory"]:
         if settings["memory_file"] is None:
@@ -51,6 +61,8 @@ def get_chatbot(settings):
     else:
         del settings["memory_file"]
         chatbot = Chatbot(**settings)
+
+    print(settings)
 
     return chatbot
 

@@ -1,6 +1,6 @@
 """
 Author: Travis Hammond
-Version: 5_13_2023
+Version: 6_14_2023
 """
 
 import os
@@ -470,7 +470,7 @@ class MemoryChatbot(ContextChatbot):
         self,
         memory: Optional[Memory] = None,
         memory_file: str = "memory_default.pkl",
-        max_num_query_results: int = 14,
+        max_num_query_results: int = 15,
         num_query_results: int = 20,
         max_memory_context_tokens: int = 1500,
         memory_score_threshold: float = 0.7,
